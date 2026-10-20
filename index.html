@@ -1,0 +1,461 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Tri-Agent Forge</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<style>
+:root{--bg:#0e1116;--p:#161b22;--b:#2a313c;--t:#e6edf3;--m:#8b949e;--a:#58a6ff;--g:#3fb950;--r:#f85149;--y:#d29922;--v:#bc8cff}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--t);font:13px/1.45 system-ui,sans-serif;height:100vh;display:flex;flex-direction:column}
+header{padding:8px 14px;border-bottom:1px solid var(--b);display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+header h1{font-size:15px;margin:0;margin-right:auto}
+main{flex:1;display:grid;grid-template-columns:300px 1fr 380px;min-height:0}
+section{border-right:1px solid var(--b);overflow:auto;padding:10px;min-height:0}
+section:last-child{border:0}
+h3{margin:12px 0 6px;font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--m)}
+input,select,textarea,button{background:var(--p);color:var(--t);border:1px solid var(--b);border-radius:6px;padding:6px 8px;font:inherit;width:100%}
+button{cursor:pointer;width:auto}button:hover{border-color:var(--a)}
+button.go{background:#238636;border-color:#2ea043}button.stop{background:#b62324;border-color:var(--r)}
+button:disabled{opacity:.4;cursor:not-allowed}
+.role{border:1px solid var(--b);border-radius:8px;padding:8px;margin-bottom:8px;background:var(--p)}
+.role b{display:block;margin-bottom:4px}.role input,.role select{margin-top:4px;background:var(--bg)}
+.drop{border:2px dashed var(--b);border-radius:8px;padding:14px;text-align:center;color:var(--m);cursor:pointer}
+.drop.on{border-color:var(--a);color:var(--a)}
+#files div{padding:3px 6px;border-radius:4px;cursor:pointer;font:12px ui-monospace,monospace;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#files div:hover,#files div.sel{background:var(--p);color:var(--a)}
+#log{display:flex;flex-direction:column;gap:8px}
+.msg{border:1px solid var(--b);border-left:3px solid var(--m);border-radius:6px;padding:8px;background:var(--p)}
+.msg h4{margin:0 0 4px;font-size:12px}.msg pre{margin:0;white-space:pre-wrap;word-break:break-word;font:12px ui-monospace,monospace;max-height:260px;overflow:auto}
+.designer{border-left-color:var(--v)}.designer h4{color:var(--v)}.coder{border-left-color:var(--a)}.coder h4{color:var(--a)}
+.approver{border-left-color:var(--y)}.approver h4{color:var(--y)}.ok{border-left-color:var(--g)}.ok h4{color:var(--g)}.bad{border-left-color:var(--r)}.bad h4{color:var(--r)}
+#ed{height:60vh;font:12px ui-monospace,monospace;resize:vertical;white-space:pre;tab-size:2}
+.row{display:flex;gap:6px;align-items:center;margin-top:6px}small{color:var(--m)}
+#st{color:var(--m)}
+@media(max-width:900px){main{grid-template-columns:1fr;overflow:auto}section{border:0;border-bottom:1px solid var(--b)}}
+.bug{font:12px ui-monospace,monospace;padding:3px 6px;border-radius:4px;border-left:3px solid var(--r);margin-bottom:3px;background:var(--p);word-break:break-word}.bug.fixed{border-left-color:var(--g);opacity:.55}.bug span{cursor:pointer;color:var(--m)}
+#hm{position:fixed;inset:0;background:#000a;display:none;align-items:center;justify-content:center;z-index:9}#hm.on{display:flex}#hm div{background:var(--p);border:1px solid var(--b);border-radius:10px;padding:18px 22px;max-width:420px;width:90%}#hm h2{margin:0 0 8px;font-size:16px}#hm ol{margin:0 0 12px;padding-left:20px;font-size:14px;line-height:1.7}
+</style></head><body>
+<div id="hm"><div><h2>How to use</h2><ol><li>Drop a file or .zip on the left.</li><li>Type what you want done.</li><li>Paste 3 OpenRouter keys (free at openrouter.ai/keys).</li><li>Press <b>Start session</b>.</li><li>Watch the 3 AIs work. Press <b>Stop</b> when done.</li><li>Press <b>Download</b> to get your files.</li></ol><small>Found a bug? Type it in the Bugs box.</small><div style="margin-top:12px;padding:0;background:none;border:0"><button id="hx">Got it</button></div></div></div>
+
+<header><h1>⚒ Tri-Agent Forge <small>OpenRouter · free models</small></h1><span id="st">idle</span>
+<button class="go" id="go">▶ Start session</button><button class="stop" id="stop" disabled>■ Stop running</button><button id="help">❓ How to use</button><button id="libdb">📚 Library &amp; Knowledge DB</button><button id="dl">⬇ Download codebase (.zip)</button></header>
+<main>
+<section>
+<h3>1 · Upload (max 500 MB)</h3>
+<div class="drop" id="drop">Drop a file or .zip here, or click<input type="file" id="file" hidden></div>
+<h3>2 · Prompt</h3>
+<textarea id="prompt" rows="5" placeholder="What should the agents do with this project?"></textarea>
+<h3>Bugs for the coder <span id="bc"></span></h3>
+<textarea id="bugt" rows="3" placeholder="Describe a bug, or paste an error / stack trace…"></textarea>
+<div class="row"><button id="addbug">+ Report bug</button><button id="clrbug">Clear fixed</button></div>
+<label style="display:block;margin:6px 0;color:var(--m)"><input type="checkbox" id="dbgonly" style="width:auto"> Debug-only: stop when no open bugs remain</label>
+<div id="bugs"></div>
+<h3>3 · Agents (one API key each)</h3>
+<div class="row"><button id="auto">Auto-pick best free coders</button><button id="shuf">Re-roll roles</button></div>
+<small id="mi"></small>
+<label style="display:block;margin-top:8px;color:var(--m)"><input type="checkbox" id="fb" checked style="width:auto"> When OpenRouter rate-limits (or no key): fall back to Pollinations POST → Pollinations GET → ch.at (no key needed)</label>
+<div id="roles" style="margin-top:8px"></div>
+<small>Keys are kept only in this browser's localStorage and sent only to openrouter.ai. Get keys at openrouter.ai/keys.</small>
+<h3>Virtual files <span id="fc"></span></h3><div id="files"></div>
+</section>
+<section><h3>Session log</h3><div id="log"></div></section>
+<section><h3>File editor <span id="cur"></span></h3>
+<textarea id="ed" spellcheck="false" placeholder="Select a file"></textarea>
+<div class="row"><button id="save">Save my edit</button><button id="runf">▶ Run file</button><small>Runs .js / .py (Pyodide WASM) / .html in the sandbox.</small></div></section>
+</main>
+<script>
+const $=s=>document.querySelector(s),sleep=ms=>new Promise(r=>setTimeout(r,ms));
+const ROLES=['approver','designer','coder'],MAX=500*1024*1024,URL_='https://openrouter.ai/api/v1/chat/completions';
+const S={vfs:new Map(),bin:new Map(),running:false,abort:null,round:0,models:[],cur:null,hist:[]};
+const ls={get(k){try{return localStorage.getItem(k)||''}catch(e){return ''}},set(k,v){try{localStorage.setItem(k,v)}catch(e){}}};
+// ---------- roles UI
+$('#roles').innerHTML=ROLES.map(r=>`<div class="role"><b>${r[0].toUpperCase()+r.slice(1)}</b><input type="password" id="k_${r}" placeholder="API key for ${r}" autocomplete="off"><select id="m_${r}"></select></div>`).join('');
+ROLES.forEach(r=>{$('#k_'+r).value=ls.get('k_'+r);$('#k_'+r).oninput=e=>ls.set('k_'+r,e.target.value.trim())});
+function score(m){const id=m.id.toLowerCase(),n=(m.name||'').toLowerCase()+id;let s=0;
+ [[/coder/,60],[/devstral/,50],[/kimi/,30],[/deepseek/,30],[/glm/,28],[/qwen3/,25],[/gpt-oss/,25],[/minimax/,25],[/code|dev/,15],[/llama-?3\.3|llama-?4/,10]].forEach(([re,w])=>{if(re.test(n))s+=w});
+ const b=n.match(/(\d{2,3})b/);if(b)s+=Math.min(+b[1],480)*.12;s+=Math.min((m.context_length||0)/20000,10);
+ if(/vision|image|embed|guard/.test(n))s-=30;return s}
+async function loadModels(){try{const j=await(await fetch('https://openrouter.ai/api/v1/models')).json();
+ S.models=j.data.filter(m=>m.id.endsWith(':free')&&(m.architecture?.output_modalities||['text']).includes('text')).sort((a,b)=>score(b)-score(a));
+ const opts=S.models.map(m=>`<option value="${m.id}">${m.id}</option>`).join('');ROLES.forEach(r=>$('#m_'+r).innerHTML=opts);
+ $('#mi').textContent=S.models.length+' free models found, ranked for coding.';autoPick()}catch(e){$('#mi').textContent='Could not load models: '+e.message}}
+function autoPick(){const top=S.models.slice(0,3);if(top.length<3)return;
+ // system picks the approver first (strongest), then coder, then idea designer
+ const o=['approver','coder','designer'];o.forEach((r,i)=>$('#m_'+r).value=top[i].id)}
+function shuffle(){const top=S.models.slice(0,3).map(m=>m.id).sort(()=>Math.random()-.5);
+ // approver is chosen first at random, then designer, then coder
+ ['approver','designer','coder'].forEach((r,i)=>$('#m_'+r).value=top[i]);log('sys','System','Roles re-rolled: approver='+$('#m_approver').value+', designer='+$('#m_designer').value+', coder='+$('#m_coder').value)}
+$('#auto').onclick=autoPick;$('#shuf').onclick=shuffle;loadModels();
+// ---------- logging
+function log(cls,who,text){const d=document.createElement('div');d.className='msg '+cls;const h=document.createElement('h4');h.textContent=who;const p=document.createElement('pre');p.textContent=text;d.append(h,p);const L=$('#log');L.append(d);L.parentElement.scrollTop=L.parentElement.scrollHeight}
+const status=t=>$('#st').textContent=t;
+// ---------- virtual file system
+const isText=(buf)=>{const u=new Uint8Array(buf).subarray(0,8000);if(u.includes(0))return false;try{new TextDecoder('utf-8',{fatal:true}).decode(u);return true}catch(e){return false}};
+function addFile(path,buf){path=path.replace(/^\/+/,'');if(isText(buf))S.vfs.set(path,new TextDecoder().decode(buf));else S.bin.set(path,buf)}
+async function ingest(f){if(!f)return;if(f.size>MAX){alert('File is larger than the 500 MB limit.');return}
+ S.vfs.clear();S.bin.clear();status('reading '+f.name);const buf=await f.arrayBuffer();
+ if(/\.zip$/i.test(f.name)||new Uint8Array(buf.slice(0,2)).join()=='80,75'){try{const z=await JSZip.loadAsync(buf);
+  for(const e of Object.values(z.files)){if(e.dir||/(^|\/)(node_modules|\.git)\//.test(e.name))continue;addFile(e.name,await e.async('arraybuffer'))}}catch(e){addFile(f.name,buf)}}
+ else addFile(f.name,buf);
+ log('sys','System',`Loaded ${S.vfs.size} text files + ${S.bin.size} binary files from ${f.name}.`);status('idle');render()}
+$('#drop').onclick=()=>$('#file').click();$('#file').onchange=e=>ingest(e.target.files[0]);
+$('#drop').ondragover=e=>{e.preventDefault();$('#drop').classList.add('on')};$('#drop').ondragleave=()=>$('#drop').classList.remove('on');
+$('#drop').ondrop=e=>{e.preventDefault();$('#drop').classList.remove('on');ingest(e.dataTransfer.files[0])};
+function render(){const keys=[...S.vfs.keys()].sort();$('#fc').textContent=`(${keys.length}+${S.bin.size} bin)`;
+ $('#files').innerHTML='';keys.forEach(k=>{const d=document.createElement('div');d.textContent=k;d.title=k;if(k===S.cur)d.className='sel';d.onclick=()=>{S.cur=k;$('#cur').textContent=k;$('#ed').value=S.vfs.get(k);render()};$('#files').append(d)});
+ if(S.cur&&S.vfs.has(S.cur)&&document.activeElement!==$('#ed'))$('#ed').value=S.vfs.get(S.cur)}
+$('#save').onclick=()=>{if(S.cur){S.vfs.set(S.cur,$('#ed').value);log('sys','You','Edited '+S.cur)}};
+$('#dl').onclick=async()=>{const z=new JSZip();S.vfs.forEach((v,k)=>z.file(k,v));S.bin.forEach((v,k)=>z.file(k,v));
+ const a=document.createElement('a');a.href=URL.createObjectURL(await z.generateAsync({type:'blob'}));a.download='codebase.zip';a.click()};
+function snapshot(m,budget=60000,only){let out='FILE TREE:\n'+[...m.keys()].sort().map(k=>`${k} (${m.get(k).length} chars)`).join('\n')+(S.bin.size?'\n(binary, untouchable: '+[...S.bin.keys()].join(', ')+')':'')+'\n\nCONTENTS:\n';
+ for(const k of [...m.keys()].sort()){if(only&&!only.has(k))continue;let c=m.get(k);const blk=`\n=== ${k} ===\n${c}\n`;if(out.length+blk.length>budget){out+=`\n=== ${k} === [omitted: context budget; ask to see it if needed]\n`;continue}out+=blk}return out}
+// ---------- providers: OpenRouter -> Pollinations POST -> Pollinations GET -> ch.at
+S.prov={};S.cool={};S.pollModel='openai';
+fetch('https://text.pollinations.ai/models').then(r=>r.json()).then(a=>{const n=a.map(x=>x.name||x);S.pollModel=n.find(x=>/coder/.test(x))||n.find(x=>x==='openai-large')||n.find(x=>x==='openai')||'openai'}).catch(()=>{});
+const who=r=>S.prov[r]||$('#m_'+r).value;
+function fit(msgs,max){const tot=msgs.reduce((a,m)=>a+m.content.length,0);if(tot<=max)return msgs;const k=max/tot;
+ return msgs.map(m=>m.content.length>2000?{role:m.role,content:m.content.slice(0,Math.floor(m.content.length*k))+'\n[...trimmed to fit provider limit]'}:m)}
+async function pick(res){const t=await res.text();let j;try{j=JSON.parse(t)}catch(e){}
+ if(j&&typeof j==='object'&&j.choices)return j.choices[0]?.message?.content||'';
+ if(!res.ok)throw new Error((j&&j.error&&(j.error.message||j.error))||'HTTP '+res.status);return t}
+async function orCall(role,messages){const key=$('#k_'+role).value.trim(),model=$('#m_'+role).value;
+ const res=await fetch(URL_,{method:'POST',signal:S.abort.signal,headers:{'Content-Type':'application/json','Authorization':'Bearer '+key,'HTTP-Referer':location.origin.startsWith('http')?location.origin:'https://localhost','X-Title':'Tri-Agent Forge'},body:JSON.stringify({model,messages})});
+ if(!res.ok){const e=new Error('HTTP '+res.status);e.status=res.status;e.ra=+res.headers.get('retry-after')||0;try{e.message=(await res.json()).error?.message||e.message}catch(_){}throw e}
+ const j=await res.json();const c=j.choices?.[0]?.message?.content;if(!c)throw Object.assign(new Error('empty response'),{status:502});return c}
+const polPost=async m=>pick(await fetch('https://text.pollinations.ai/openai',{method:'POST',signal:S.abort.signal,headers:{'Content-Type':'application/json'},body:JSON.stringify({model:S.pollModel,messages:fit(m,80000)})}));
+async function polGet(m){const sys=m.filter(x=>x.role==='system').map(x=>x.content).join('\n'),usr=m.filter(x=>x.role!=='system').map(x=>x.content).join('\n\n');
+ const u='https://text.pollinations.ai/'+encodeURIComponent(usr)+'?model='+encodeURIComponent(S.pollModel)+'&system='+encodeURIComponent(sys);
+ if(u.length>7000)throw new Error('prompt too long for GET');return pick(await fetch(u,{signal:S.abort.signal}))}
+const chat=async m=>pick(await fetch('https://ch.at/v1/chat/completions',{method:'POST',signal:S.abort.signal,headers:{'Content-Type':'application/json'},body:JSON.stringify({model:'gpt-4o',messages:fit(m,40000)})}));
+async function ask(role,messages){const hasKey=$('#k_'+role).value.trim(),fb=$('#fb').checked,model=$('#m_'+role).value;let why='';
+ if(hasKey&&Date.now()>(S.cool[role]||0)){
+  for(let t=0;t<2&&S.running;t++){
+   try{const c=await orCall(role,messages);S.prov[role]=model;return c}
+   catch(e){if(e.name==='AbortError')throw e;why=e.message;
+    if(e.status===429){S.cool[role]=Date.now()+Math.min(e.ra||45,120)*1000;break}
+    if(e.status&&e.status<500&&e.status!==402)break;
+    await sleep(2500)}}
+ }else why=hasKey?'OpenRouter cooling down after a rate limit':'no OpenRouter key';
+ if(!S.running)throw new Error('stopped');
+ if(!fb)throw new Error(`${role}: OpenRouter unavailable (${why}); fallback is off`);
+ log('sys','System',`${role}: OpenRouter unavailable (${why}) → using no-key providers`);
+ const chain=[['Pollinations POST ('+S.pollModel+')',polPost],['Pollinations GET',polGet],['ch.at',chat]];
+ for(const[n,f]of chain){for(let t=0;t<2;t++){if(!S.running)throw new Error('stopped');
+  try{const c=await f(messages);if(c&&c.trim()){S.prov[role]=n;return c}}
+  catch(e){if(e.name==='AbortError')throw e;log('sys','System',n+' failed: '+e.message);if(/prompt too long/.test(e.message))break;await sleep(3000)}}}
+ throw new Error(role+': all providers failed')}
+// ---------- code execution sandbox (JS worker, Pyodide WASM worker, hidden HTML frame)
+const mkW=fn=>new Worker(URL.createObjectURL(new Blob(['('+fn+')()'],{type:'text/javascript'})));
+const jsWorker=function(){self.onmessage=async e=>{const files=e.data.files,bins=e.data.bins,out=[];
+ const f=a=>a.map(x=>{if(typeof x==='string')return x;try{return JSON.stringify(x)}catch(_){return String(x)}}).join(' ');
+ const console={log:(...a)=>out.push(f(a)),info:(...a)=>out.push(f(a)),warn:(...a)=>out.push('[warn] '+f(a)),error:(...a)=>out.push('[error] '+f(a))};
+ const fs={list:()=>Object.keys(files).concat(Object.keys(bins)),exists:p=>p in files||p in bins,readFile:p=>{if(!(p in files))throw new Error('ENOENT: '+p);return files[p]},readBinary:p=>{if(!(p in bins))throw new Error('ENOENT (binary): '+p);return new Uint8Array(bins[p])},writeFile:(p,c)=>{files[p]=String(c)}};
+ const require=m=>{if(m==='fs'||m==='node:fs')return fs;throw new Error('require() only supports "fs"; no other modules: '+m)};
+ try{const AF=Object.getPrototypeOf(async function(){}).constructor;const r=await new AF('console','fs','require',e.data.code)(console,fs,require);if(r!==undefined)out.push('=> '+f([r]));postMessage({out:out.join('\n')})}
+ catch(err){postMessage({out:out.join('\n'),err:String(err&&err.stack||err).slice(0,1500)})}}};
+const pyWorker=function(){let py;self.onmessage=async e=>{const code=e.data.code,files=e.data.files,out=[];
+ try{if(!py){importScripts('https://cdn.jsdelivr.net/pyodide/v0.26.4/full/pyodide.js');py=await loadPyodide()}
+  py.setStdout({batched:s=>out.push(s)});py.setStderr({batched:s=>out.push('[stderr] '+s)});
+  py.runPython("import shutil,os,sys\nshutil.rmtree('/work',ignore_errors=True)\nos.makedirs('/work')\nos.chdir('/work')\nif '/work' not in sys.path:\n    sys.path.insert(0,'/work')");
+  for(const p in files){py.FS.mkdirTree(('/work/'+p).replace(/\/[^/]*$/,''));py.FS.writeFile('/work/'+p,files[p])}
+  await py.loadPackagesFromImports(code);
+  const r=await py.runPythonAsync(code);if(r!==undefined&&r!==null)out.push('=> '+String(r));
+  postMessage({out:out.join('\n')})}
+ catch(err){postMessage({out:out.join('\n'),err:String(err.message||err).slice(-1800)})}}};
+function runJS(code,fs,ms=10000){return new Promise(res=>{let w;try{w=mkW(jsWorker)}catch(e){return res('ERROR: cannot start worker: '+e.message)}
+ const bins={};let tot=0;S.bin.forEach((v,k)=>{if(v.byteLength<6e6&&(tot+=v.byteLength)<24e6)bins[k]=v});
+ const t=setTimeout(()=>{w.terminate();res('TIMEOUT after '+ms/1000+'s (infinite loop?). Worker killed.')},ms);
+ w.onmessage=e=>{clearTimeout(t);w.terminate();res((e.data.out||'(no output)')+(e.data.err?'\nERROR: '+e.data.err:''))};
+ w.onerror=e=>{clearTimeout(t);w.terminate();res('ERROR: '+e.message+' (line '+e.lineno+')')};
+ w.postMessage({code,files:Object.fromEntries(fs),bins})})}
+function runPy(code,fs){return new Promise(res=>{if(!S.pyW){S.pyW=mkW(pyWorker);S.pyReady=false}const w=S.pyW,ms=S.pyReady?25000:150000;let t;
+ const done=(m,kill)=>{clearTimeout(t);w.onmessage=w.onerror=null;if(kill){w.terminate();S.pyW=null}res(m)};
+ t=setTimeout(()=>done('TIMEOUT after '+ms/1000+'s (Python worker restarted)',1),ms);
+ w.onmessage=e=>{S.pyReady=true;done((e.data.out||'(no output)')+(e.data.err?'\nERROR: '+e.data.err:''))};
+ w.onerror=e=>done('ERROR: '+e.message,1);
+ if(!S.pyReady)log('sys','System','Loading Python (Pyodide WebAssembly) — first run downloads ~10 MB…');
+ w.postMessage({code,files:Object.fromEntries(fs)})})}
+function runHTML(path,fs,ms=3500){return new Promise(res=>{let html=fs.get(path);if(html==null)return res('ERROR: no such file '+path+'. Files: '+[...fs.keys()].join(', '));
+ const base=path.replace(/[^/]*$/,'');
+ const norm=p=>{const o=[];(base+p).split('/').forEach(s=>{if(s==='..')o.pop();else if(s&&s!=='.')o.push(s)});return o.join('/')};
+ const esc=c=>c.replace(/<\/(script|style)/gi,'<\\/$1'),ext=s=>/^(https?:)?\/\//.test(s);
+ html=html.replace(/<script([^>]*?)\ssrc=["']([^"']+)["']([^>]*)>\s*<\/script>/gi,(m,a,s,b)=>{const c=ext(s)?null:fs.get(norm(s));return c==null?m:'<script'+a+b+'>'+esc(c)+'<\/script>'});
+ html=html.replace(/<link([^>]*?)href=["']([^"']+\.css)["']([^>]*)>/gi,(m,a,s,b)=>{const c=ext(s)?null:fs.get(norm(s));return c==null?m:'<style>'+esc(c)+'</style>'});
+ const id='r'+Math.random().toString(36).slice(2);
+ const hook='<script>(function(){var I="'+id+'";function f(a){return Array.prototype.map.call(a,function(x){try{return typeof x==="string"?x:JSON.stringify(x)}catch(e){return String(x)}}).join(" ")}function P(t,m){parent.postMessage({run:I,t:t,m:m},"*")}["log","info","warn","error"].forEach(function(k){var o=console[k];console[k]=function(){P(k,f(arguments));o.apply(console,arguments)}});addEventListener("error",function(e){P("error","Uncaught: "+e.message+" ("+String(e.filename||"").split("/").pop()+":"+e.lineno+")")});addEventListener("unhandledrejection",function(e){P("error","Unhandled rejection: "+(e.reason&&e.reason.message||e.reason))});setTimeout(function(){var b=document.body;P("dom","title="+document.title+" | elements="+document.getElementsByTagName("*").length+" | canvases="+document.querySelectorAll("canvas").length+" | text="+(b?b.innerText.replace(/\\s+/g," ").slice(0,300):"(no body)"))},'+(ms-600)+')})()<\/script>';
+ html=/<head[^>]*>/i.test(html)?html.replace(/<head[^>]*>/i,m=>m+hook):hook+html;
+ const ifr=document.createElement('iframe');ifr.setAttribute('sandbox','allow-scripts');ifr.style.cssText='position:fixed;left:-9999px;top:0;width:900px;height:650px;border:0';
+ const logs=[];const h=e=>{if(e.source!==ifr.contentWindow||!e.data||e.data.run!==id)return;logs.push(e.data.t==='dom'?'[DOM] '+e.data.m:'['+e.data.t+'] '+e.data.m)};
+ addEventListener('message',h);
+ setTimeout(()=>{removeEventListener('message',h);ifr.remove();res(logs.length?logs.join('\n'):'(page loaded; no console output)')},ms);
+ ifr.srcdoc=html;document.body.append(ifr)})}
+async function execRun(r,fs){let o;try{
+ if(/^(js|javascript|node)$/.test(r.lang)){const c=r.body||fs.get(r.arg);o=c?await runJS(c,fs):'ERROR: no code (give a body or an existing file path)'}
+ else if(/^(python|py)$/.test(r.lang)){const c=r.body||fs.get(r.arg);o=c?await runPy(c,fs):'ERROR: no code (give a body or an existing file path)'}
+ else if(r.lang==='html')o=await runHTML(r.arg||'index.html',fs);
+ else o='ERROR: unknown RUN type "'+r.lang+'" (use js, python or html)'}catch(e){o='ERROR: '+e.message}
+ return o.length>6000?o.slice(0,3000)+'\n…[truncated]…\n'+o.slice(-2800):o}
+$('#runf').onclick=async()=>{const p=S.cur;if(!p)return;S.vfs.set(p,$('#ed').value);const lang={js:'js',mjs:'js',py:'python',html:'html',htm:'html'}[p.split('.').pop().toLowerCase()];
+ if(!lang){alert('Runnable: .js .py .html');return}status('running '+p);const o=await execRun({lang,arg:p,body:''},S.vfs);log('sys','▶ '+p,o);autoBug(o,'Run of '+p);status(S.running?'running':'idle')};
+// ---------- parsing
+function parseEdits(t){const ed=[];let m;const re=/<<<FILE:\s*(.+?)\s*>>>\r?\n([\s\S]*?)\r?\n?<<<END>>>/g;
+ while(m=re.exec(t)){let c=m[2];const f=c.match(/^```[\w-]*\r?\n([\s\S]*?)\r?\n```\s*$/);if(f)c=f[1];ed.push({path:m[1].replace(/^\/+/,''),content:c})}
+ return{ed,del:[...t.matchAll(/<<<DELETE:\s*(.+?)\s*>>>/g)].map(x=>x[1].replace(/^\/+/,''))}}
+const parseRuns=t=>[...t.matchAll(/<<<RUN:\s*(\w+)(?:[ \t]+([^>\n]+?))?\s*>>>\r?\n?([\s\S]*?)<<<END>>>/g)].map(m=>({lang:m[1].toLowerCase(),arg:(m[2]||'').trim(),body:m[3].trim()}));
+// ---------- library database (offline vetted index + live npm/jsDelivr lookup)
+// name|category|version|js (jsDelivr path, or full URL; + separates several)|css|notes
+const LIBDATA=`react|framework|18.3.1|npm/react@18.3.1/umd/react.production.min.js+npm/react-dom@18.3.1/umd/react-dom.production.min.js||UMD globals React/ReactDOM; pair with babel-standalone for JSX
+babel-standalone|tooling|7.25.0|npm/@babel/standalone@7.25.0/babel.min.js||Compile JSX/modern JS in browser via script type=text/babel
+preact|framework|10.22.0|npm/preact@10.22.0/dist/preact.min.umd.js||3KB React alternative
+vue|framework|3.4.38|npm/vue@3.4.38/dist/vue.global.prod.js||Vue 3 global build, Vue.createApp
+alpinejs|framework|3.14.1|npm/alpinejs@3.14.1/dist/cdn.min.js||Reactive HTML attributes (add defer)
+htmx|framework|1.9.12|npm/htmx.org@1.9.12/dist/htmx.min.js||HTML-over-the-wire AJAX attributes
+jquery|util|3.7.1|npm/jquery@3.7.1/dist/jquery.min.js||DOM and AJAX helpers
+lodash|util|4.17.21|npm/lodash@4.17.21/lodash.min.js||Utility functions, global _
+ramda|util|0.30.1|npm/ramda@0.30.1/dist/ramda.min.js||Functional utilities
+rxjs|util|7.8.1|npm/rxjs@7.8.1/dist/bundles/rxjs.umd.min.js||Reactive streams, global rxjs
+dayjs|util|1.11.12|npm/dayjs@1.11.12/dayjs.min.js||Date handling
+fuse|util|7.0.0|npm/fuse.js@7.0.0/dist/fuse.min.js||Fuzzy search
+chroma|util|2.4.2|npm/chroma-js@2.4.2/chroma.min.js||Color manipulation and scales
+mathjs|math|12.4.2|npm/mathjs@12.4.2/lib/browser/math.js||Expressions, matrices, units
+katex|math|0.16.11|npm/katex@0.16.11/dist/katex.min.js|npm/katex@0.16.11/dist/katex.min.css|LaTeX math rendering
+tailwind|css|3.4.17|https://cdn.tailwindcss.com/3.4.17||Utility-first CSS play CDN, good for prototypes
+bootstrap|css|5.3.3|npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js|npm/bootstrap@5.3.3/dist/css/bootstrap.min.css|Components and grid
+bulma|css|1.0.2||npm/bulma@1.0.2/css/bulma.min.css|CSS-only framework
+pico|css|2.0.6||npm/@picocss/pico@2.0.6/css/pico.min.css|Classless minimal CSS
+water|css|2.2.0||npm/water.css@2.2.0/out/dark.min.css|Drop-in classless dark styling
+normalize|css|8.0.1||npm/normalize.css@8.0.1/normalize.css|CSS reset
+animate-css|css|4.1.1||npm/animate.css@4.1.1/animate.min.css|Class-based CSS animations
+fontawesome|icons|6.5.2||npm/@fortawesome/fontawesome-free@6.5.2/css/all.min.css|Icon font, i class fa-solid fa-star
+bootstrap-icons|icons|1.11.3||npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css|Icon font
+lucide|icons|0.400.0|npm/lucide@0.400.0/dist/umd/lucide.min.js||SVG icons, call lucide.createIcons()
+gsap|animation|3.12.5|npm/gsap@3.12.5/dist/gsap.min.js||Pro animation; plugins like ScrollTrigger live in the same dist folder
+animejs|animation|3.2.2|npm/animejs@3.2.2/lib/anime.min.js||Small animation engine
+lottie|animation|5.12.2|npm/lottie-web@5.12.2/build/player/lottie.min.js||Play After Effects JSON animations
+confetti|animation|1.9.3|npm/canvas-confetti@1.9.3/dist/confetti.browser.min.js||Confetti burst, confetti()
+chartjs|charts|4.4.3|npm/chart.js@4.4.3/dist/chart.umd.js||Canvas charts
+d3|charts|7.9.0|npm/d3@7.9.0/dist/d3.min.js||Data visualization
+echarts|charts|5.5.1|npm/echarts@5.5.1/dist/echarts.min.js||Rich interactive charts
+plotly|charts|2.35.0|npm/plotly.js-dist-min@2.35.0/plotly.min.js||Scientific charts, large
+mermaid|charts|10.9.1|npm/mermaid@10.9.1/dist/mermaid.min.js||Text-to-diagram
+three|3d|0.149.0|npm/three@0.149.0/build/three.min.js||WebGL 3D, global THREE (last classic build; newer versions are ESM only)
+babylonjs|3d|7.20.0|npm/babylonjs@7.20.0/babylon.js||3D engine with physics, GUI, loaders
+pixi|2d|7.4.2|npm/pixi.js@7.4.2/dist/pixi.min.js||Fast 2D WebGL renderer
+phaser|2d|3.80.1|npm/phaser@3.80.1/dist/phaser.min.js||Full 2D game framework
+p5|2d|1.9.4|npm/p5@1.9.4/lib/p5.min.js||Creative coding canvas
+konva|2d|9.3.14|npm/konva@9.3.14/konva.min.js||Canvas scene graph
+fabric|2d|5.3.0|npm/fabric@5.3.0/dist/fabric.min.js||Canvas object editor
+matter|physics|0.19.0|npm/matter-js@0.19.0/build/matter.min.js||2D rigid-body physics
+leaflet|maps|1.9.4|npm/leaflet@1.9.4/dist/leaflet.js|npm/leaflet@1.9.4/dist/leaflet.css|Interactive maps with OpenStreetMap tiles
+howler|audio|2.2.4|npm/howler@2.2.4/dist/howler.min.js||Audio playback and sprites
+tone|audio|14.7.77|npm/tone@14.7.77/build/Tone.js||Web Audio synthesis and sequencing
+wavesurfer|audio|7.8.2|npm/wavesurfer.js@7.8.2/dist/wavesurfer.min.js||Audio waveforms
+hlsjs|video|1.5.13|npm/hls.js@1.5.13/dist/hls.min.js||HLS streaming playback
+marked|text|12.0.2|npm/marked@12.0.2/marked.min.js||Markdown to HTML
+dompurify|text|3.1.6|npm/dompurify@3.1.6/dist/purify.min.js||Sanitize untrusted HTML
+highlightjs|text|11.9.0|npm/@highlightjs/cdn-assets@11.9.0/highlight.min.js|npm/@highlightjs/cdn-assets@11.9.0/styles/github-dark.min.css|Syntax highlighting, hljs.highlightAll()
+sortable|ux|1.15.2|npm/sortablejs@1.15.2/Sortable.min.js||Drag-and-drop lists
+swiper|ux|11.1.9|npm/swiper@11.1.9/swiper-bundle.min.js|npm/swiper@11.1.9/swiper-bundle.min.css|Touch sliders
+sweetalert2|ux|11.12.4|npm/sweetalert2@11.12.4/dist/sweetalert2.all.min.js||Modal dialogs
+hammer|ux|2.0.8|npm/hammerjs@2.0.8/hammer.min.js||Touch gestures
+datgui|ux|0.7.9|npm/dat.gui@0.7.9/build/dat.gui.min.js||Debug control panels
+axios|network|1.7.2|npm/axios@1.7.2/dist/axios.min.js||HTTP client
+socketio|network|4.7.5|npm/socket.io-client@4.7.5/dist/socket.io.min.js||Realtime client
+peerjs|network|1.5.4|npm/peerjs@1.5.4/dist/peerjs.min.js||WebRTC peer-to-peer
+localforage|storage|1.10.0|npm/localforage@1.10.0/dist/localforage.min.js||Async storage over IndexedDB
+dexie|storage|4.0.8|npm/dexie@4.0.8/dist/dexie.min.js||IndexedDB wrapper with queries
+jszip|files|3.10.1|npm/jszip@3.10.1/dist/jszip.min.js||Zip read and write
+filesaver|files|2.0.5|npm/file-saver@2.0.5/dist/FileSaver.min.js||saveAs()
+papaparse|files|5.4.1|npm/papaparse@5.4.1/papaparse.min.js||CSV parsing
+xlsx|files|0.18.5|npm/xlsx@0.18.5/dist/xlsx.full.min.js||Excel read and write
+pdflib|files|1.17.1|npm/pdf-lib@1.17.1/dist/pdf-lib.min.js||Create and edit PDFs
+sqljs|wasm|1.10.3|npm/sql.js@1.10.3/dist/sql-wasm.js||SQLite in WebAssembly; initSqlJs({locateFile:f=>"https://cdn.jsdelivr.net/npm/sql.js@1.10.3/dist/"+f})
+pyodide|wasm|0.26.4|https://cdn.jsdelivr.net/pyodide/v0.26.4/full/pyodide.js||Python in WebAssembly, await loadPyodide()
+tesseract|wasm|5.1.0|npm/tesseract.js@5.1.0/dist/tesseract.min.js||OCR in WebAssembly
+tfjs|ai|4.20.0|npm/@tensorflow/tfjs@4.20.0/dist/tf.min.js||Machine learning in the browser
+onnxruntime|ai|1.18.0|npm/onnxruntime-web@1.18.0/dist/ort.min.js||Run ONNX models via WASM or WebGPU
+mithril|framework|2.2.2|npm/mithril@2.2.2/mithril.min.js||Tiny SPA framework with router, m() hyperscript
+petite-vue|framework|0.4.1|npm/petite-vue@0.4.1/dist/petite-vue.iife.js||6KB Vue subset for progressive enhancement
+lit|framework|3.2.0|esm:https://esm.sh/lit@3.2.0||ES module: web components with html and css tagged templates
+solid|framework|1.8.22|esm:https://esm.sh/solid-js@1.8.22||ES module: fine-grained reactive signals, no virtual DOM
+hyperapp|framework|2.0.22|esm:https://esm.sh/hyperapp@2.0.22||ES module: 1KB state-view-action framework
+htm|framework|3.1.1|esm:https://esm.sh/htm@3.1.1||ES module: JSX-like tagged templates, no build step (use with preact)
+zustand|state|4.5.5|esm:https://esm.sh/zustand@4.5.5/vanilla||ES module: tiny store, createStore
+immer|state|10.1.1|esm:https://esm.sh/immer@10.1.1||ES module: immutable updates via produce()
+xstate|state|5.18.1|esm:https://esm.sh/xstate@5.18.1||ES module: finite state machines and actors
+redux|state|5.0.1|esm:https://esm.sh/redux@5.0.1||ES module: predictable state container
+zod|state|3.23.8|esm:https://esm.sh/zod@3.23.8||ES module: schema validation
+yjs|collab|13.6.18|esm:https://esm.sh/yjs@13.6.18||ES module: CRDT for real-time collaboration and offline merge
+comlink|workers|4.4.1|npm/comlink@4.4.1/dist/umd/comlink.min.js||RPC proxies over Web Workers
+daisyui|css|4.12.10||npm/daisyui@4.12.10/dist/full.min.css|Tailwind component classes (use with tailwind)
+uikit|css|3.21.12|npm/uikit@3.21.12/dist/js/uikit.min.js|npm/uikit@3.21.12/dist/css/uikit.min.css|Lightweight modular UI kit
+open-props|css|1.7.6||npm/open-props@1.7.6/open-props.min.css|CSS custom property design tokens
+aos|animation|2.3.4|npm/aos@2.3.4/dist/aos.js|npm/aos@2.3.4/dist/aos.css|Animate on scroll, AOS.init()
+typedjs|animation|2.1.0|npm/typed.js@2.1.0/dist/typed.umd.js||Typewriter effect
+tween|animation|18.6.4|npm/@tweenjs/tween.js@18.6.4/dist/tween.umd.js||Tweening engine
+apexcharts|charts|3.53.0|npm/apexcharts@3.53.0/dist/apexcharts.min.js||Modern SVG charts
+uplot|charts|1.6.31|npm/uplot@1.6.31/dist/uPlot.iife.min.js|npm/uplot@1.6.31/dist/uPlot.min.css|Very fast time-series charts
+vis-network|charts|9.1.9|npm/vis-network@9.1.9/standalone/umd/vis-network.min.js||Interactive network graphs
+cytoscape|charts|3.30.2|npm/cytoscape@3.30.2/dist/cytoscape.min.js||Graph theory visualization and analysis
+gl-matrix|3d|3.4.3|npm/gl-matrix@3.4.3/gl-matrix-min.js||Fast vec/mat/quat math for WebGL
+regl|3d|2.1.0|npm/regl@2.1.0/dist/regl.min.js||Functional WebGL
+twgl|3d|5.5.4|npm/twgl.js@5.5.4/dist/5.x/twgl-full.min.js||Tiny WebGL helper library
+three-modern|3d|0.169.0|esm:https://esm.sh/three@0.169.0||ES module: current Three.js (WebGPURenderer lives in three/webgpu)
+rapier|physics|0.14.0|esm:https://esm.sh/@dimforge/rapier3d-compat@0.14.0||ES module: Rust physics engine compiled to WebAssembly
+cannon-es|physics|0.20.0|esm:https://esm.sh/cannon-es@0.20.0||ES module: 3D physics
+statsjs|util|0.17.0|npm/stats.js@0.17.0/build/stats.min.js||FPS/ms/memory meter
+videojs|video|8.17.4|npm/video.js@8.17.4/dist/video.min.js|npm/video.js@8.17.4/dist/video-js.min.css|Full-featured video player
+plyr|video|3.7.8|npm/plyr@3.7.8/dist/plyr.min.js|npm/plyr@3.7.8/dist/plyr.css|Clean accessible media player
+monaco|editor|0.52.0|npm/monaco-editor@0.52.0/min/vs/loader.js||VS Code editor; AMD loader, require.config({paths:{vs:".../min/vs"}})
+ace|editor|1.36.2|npm/ace-builds@1.36.2/src-min-noconflict/ace.js||Code editor
+quill|editor|2.0.2|npm/quill@2.0.2/dist/quill.js|npm/quill@2.0.2/dist/quill.snow.css|Rich text editor
+prism|text|1.29.0|npm/prismjs@1.29.0/prism.min.js|npm/prismjs@1.29.0/themes/prism-tomorrow.min.css|Syntax highlighting
+turndown|text|7.2.0|npm/turndown@7.2.0/dist/turndown.js||HTML to Markdown
+luxon|util|3.5.0|npm/luxon@3.5.0/build/global/luxon.min.js||Dates with time zones
+decimal|math|10.4.3|npm/decimal.js@10.4.3/decimal.min.js||Arbitrary-precision decimals
+seedrandom|util|3.0.5|npm/seedrandom@3.0.5/seedrandom.min.js||Seedable PRNG for reproducible randomness
+pako|files|2.1.0|npm/pako@2.1.0/dist/pako.min.js||zlib/gzip in JS
+fflate|files|0.8.2|npm/fflate@0.8.2/umd/index.js||Fast compression/zip
+crypto-js|security|4.2.0|npm/crypto-js@4.2.0/crypto-js.js||Hashes, HMAC, AES (prefer WebCrypto when possible)
+tweetnacl|security|1.0.3|npm/tweetnacl@1.0.3/nacl-fast.min.js||Public-key crypto and signatures
+alasql|data|4.5.2|npm/alasql@4.5.2/dist/alasql.min.js||SQL queries over JS arrays, CSV, Excel
+lunr|data|2.3.9|npm/lunr@2.3.9/lunr.min.js||Full-text search index
+pdfjs|files|3.11.174|npm/pdfjs-dist@3.11.174/build/pdf.min.js||Render PDFs; set GlobalWorkerOptions.workerSrc to build/pdf.worker.min.js
+html2canvas|files|1.4.1|npm/html2canvas@1.4.1/dist/html2canvas.min.js||Screenshot DOM to canvas
+jspdf|files|2.5.1|npm/jspdf@2.5.1/dist/jspdf.umd.min.js||Generate PDFs
+jsqr|files|1.4.0|npm/jsqr@1.4.0/dist/jsQR.js||Decode QR codes from image data
+mqtt|network|5.10.1|npm/mqtt@5.10.1/dist/mqtt.min.js||MQTT over WebSocket
+fengari|wasm|0.1.4|npm/fengari-web@0.1.4/dist/fengari-web.js||Lua VM in JavaScript
+wabt|wasm|1.0.36|npm/wabt@1.0.36/index.js||WebAssembly text (wat) to binary toolkit
+quickjs|wasm|0.31.0|esm:https://esm.sh/quickjs-emscripten@0.31.0||ES module: sandboxed JS engine compiled to WASM, run untrusted code safely
+pglite|wasm|0.2.12|esm:https://esm.sh/@electric-sql/pglite@0.2.12||ES module: real PostgreSQL in WebAssembly
+transformers|ai|2.17.2|esm:https://esm.sh/@xenova/transformers@2.17.2||ES module: Hugging Face models (ONNX/WASM) pipelines in browser
+webllm|ai|0.2.75|esm:https://esm.sh/@mlc-ai/web-llm@0.2.75||ES module: run LLMs on WebGPU
+mediapipe|ai|0.10.14|esm:https://esm.sh/@mediapipe/tasks-vision@0.10.14||ES module: hand/face/pose/segmentation in WASM`;
+const LIBS=LIBDATA.trim().split('\n').map(l=>{const[n,c,v,j,s,d]=l.split('|');return{n,c,v,js:j?j.split('+'):[],css:s?s.split('+'):[],d}});
+const LIBINDEX=Object.entries(LIBS.reduce((a,l)=>((a[l.c]=a[l.c]||[]).push(l.n),a),{})).map(([c,a])=>c+': '+a.join(', ')).join('\n');
+const KBDATA=`workers|Web Workers, Comlink, SharedArrayBuffer|worker thread parallel comlink transferable atomics offscreencanvas pool|Move CPU-heavy work off the main thread: new Worker(URL.createObjectURL(new Blob([src]))) works in a single file. Use postMessage with transferables (ArrayBuffer, ImageBitmap, OffscreenCanvas) to avoid copies. Comlink gives RPC proxies over workers. Build a worker pool sized navigator.hardwareConcurrency-1 with a task queue. SharedArrayBuffer + Atomics.wait/notify needs cross-origin isolation (COOP same-origin + COEP require-corp), so it is unavailable on file:// and most static hosts; fall back to message passing. OffscreenCanvas lets a worker render WebGL/2D directly.
+wasm|WebAssembly integration|wasm webassembly instantiate memory simd threads rust emscripten assemblyscript wat|Load with WebAssembly.instantiateStreaming(fetch(url), imports) (needs the application/wasm MIME type), else instantiate(await (await fetch(url)).arrayBuffer()). In a single HTML file embed bytes as base64 and decode with Uint8Array.from(atob(b64),c=>c.charCodeAt(0)). Share data via exports.memory.buffer and re-create typed array views after memory.grow because the old buffer detaches. Strings need pointer+length passing and TextDecoder. Tiny module exporting add(i32,i32): new Uint8Array([0,97,115,109,1,0,0,0,1,7,1,96,2,127,127,1,127,3,2,1,0,7,7,1,3,97,100,100,0,0,10,9,1,7,0,32,0,32,1,106,11]). Toolchains: Rust wasm-bindgen/wasm-pack, Emscripten for C/C++, AssemblyScript for TypeScript-like code. SIMD and bulk-memory are widely supported; threads need SharedArrayBuffer isolation. Author text format with wabt (wat2wasm).
+webgpu|WebGPU compute and rendering|webgpu wgsl compute shader gpu buffer pipeline|const adapter=await navigator.gpu?.requestAdapter(); const device=await adapter.requestDevice(); canvas.getContext('webgpu').configure({device,format:navigator.gpu.getPreferredCanvasFormat()}). Shaders are WGSL. Flow: createShaderModule, createComputePipeline or createRenderPipeline, bind groups for buffers/textures, command encoder, queue.submit. Read results by copying to a MAP_READ buffer and mapAsync. Workgroup size 64 is a safe default. Always feature-detect and fall back to WebGL2; Babylon.js (WebGPUEngine) and Three.js (WebGPURenderer) abstract it.
+webgl|WebGL2 performance|webgl shader instancing vao texture draw calls context lost|Minimize draw calls: instanced rendering (drawArraysInstanced), texture atlases, batch sprites into one dynamic buffer, VAOs to cache attribute state, UBOs for shared uniforms. Avoid gl.getError and readPixels inside the frame loop. Reuse buffers with bufferSubData. Use mipmaps and compressed textures. Handle webglcontextlost/webglcontextrestored. Premultiplied alpha blending avoids halo artifacts.
+gameloop|Game loop, ECS, spatial structures|game loop fixed timestep ecs quadtree spatial hash collision delta time prng|Use requestAnimationFrame with a fixed-timestep accumulator: add the frame dt (clamped to about 100ms), step the simulation in constant 1/60 slices, render with interpolation alpha=acc/step. Decouple input events (just store state) from update. ECS: entities are ids, components are typed arrays or maps, systems iterate component sets (cache friendly). Broad-phase collision with a uniform spatial hash (cell about 2x the largest radius) or a quadtree; narrow-phase AABB/circle/SAT. Pool bullets and particles to avoid GC spikes. Seed a PRNG such as mulberry32 for reproducible bugs.
+algos|Algorithms and complexity cheat sheet|algorithm dijkstra astar heap union find trie dp lru memo big-o graph sorting|Maps/Sets are O(1), sort O(n log n), binary search O(log n). Graphs: BFS for unweighted, Dijkstra with a binary heap for non-negative weights, A* with an admissible heuristic (Manhattan/Euclidean), Kahn topological sort, union-find with path compression for connectivity, Kruskal for MST. Strings: trie for prefix search, KMP/Z-function for matching, rolling hash. DP: define state, transition, base case, iterate bottom-up, compress dimensions. LRU cache = Map (delete then set on access, evict the first key). Memoize pure functions. Use typed arrays in hot numeric loops.
+jsperf|JavaScript performance and memory|performance gc memory leak typed array pool hidden class v8 profile benchmark|Keep object shapes stable (same property order) so V8 hidden classes stay monomorphic; avoid delete, holey or mixed arrays, and polymorphic hot functions. Prefer typed arrays and plain for loops in hot paths; avoid allocating inside loops (reuse objects, pools) to cut GC pauses. Leaks come from forgotten listeners, detached DOM nodes held by closures, ever-growing Maps (use WeakMap/WeakRef), unbounded caches and timers. Measure with performance.now(), performance.mark/measure, console.time and the DevTools Performance and Memory panels; benchmark with warm-up and many iterations, never a single run.
+async|Async patterns and concurrency|promise abort debounce throttle queue retry backoff async iterator scheduler race|Promise.all fails fast, allSettled collects every result, Promise.race plus a timeout bounds waits. AbortController cancels fetches and streams (pass the signal everywhere). Cap concurrency with a small semaphore/queue instead of unbounded Promise.all. Retry with exponential backoff plus jitter, only for idempotent or transient errors. Debounce for end of input, throttle for continuous events. for await models streams of results. Yield to keep the UI responsive: scheduler.yield(), setTimeout(0), MessageChannel; requestIdleCallback for low priority work. Never swallow rejections (listen to unhandledrejection). Await ordering bugs and stale closures are the classic race conditions.
+streams|Streams, compression, files, OPFS|stream readablestream transformstream compressionstream file system access opfs blob download|fetch(url).body is a ReadableStream: pipeThrough(new TextDecoderStream()) for text or new DecompressionStream('gzip'). CompressionStream compresses without libraries. Write a custom TransformStream to parse large files chunk by chunk instead of loading them into memory; Blob.stream() and file.slice() read big uploads incrementally. Origin Private File System: const root=await navigator.storage.getDirectory(); fast createSyncAccessHandle works only inside workers. File System Access API (showOpenFilePicker/showSaveFilePicker) is Chromium-only; fall back to input type=file and an anchor download with URL.createObjectURL(blob), revoking the URL afterwards.
+storage|Browser storage choices|indexeddb localstorage cache api quota persist idb dexie opfs|localStorage is synchronous, about 5MB, strings only. IndexedDB is async, large, stores structured-clone values with indexes and transactions; wrap it with idb or Dexie, run schema migrations in onupgradeneeded and keep transactions short (they auto-commit when the event loop idles). Cache API stores Request/Response pairs (service worker assets). OPFS suits big binary files. navigator.storage.estimate() shows quota and storage.persist() requests eviction protection. Never store secrets unencrypted; Safari evicts script-writable storage after about 7 days without use.
+pwa|Service workers and PWAs|service worker pwa offline cache manifest workbox install sync|Lifecycle: register, install (precache with cache.addAll), activate (delete old caches, clients.claim), fetch (respond). Strategies: cache-first for hashed static assets, network-first for HTML and API with cache fallback, stale-while-revalidate for semi-fresh data. Version cache names and use skipWaiting carefully (prompt the user to reload). Needs HTTPS or localhost and a real sw.js file (a Blob URL cannot be registered). The manifest needs name, icons (192 and 512), start_url, display and theme_color. Background Sync and Push are Chromium-centric.
+security|Web security essentials|security xss csp sanitize cors csrf sri crypto sandbox injection prototype pollution webcrypto|Never put untrusted data in innerHTML: use textContent or DOMPurify; build URLs with URL and encodeURIComponent; avoid eval/new Function on user input. Add a CSP, Subresource Integrity on CDN scripts (integrity=sha384-... crossorigin=anonymous) and sandbox untrusted iframes (without allow-same-origin). Validate postMessage origin and source. Prevent prototype pollution (Object.create(null), reject __proto__/constructor keys when merging). CORS is a browser policy, not authentication. WebCrypto: crypto.getRandomValues, crypto.subtle.digest('SHA-256',bytes), AES-GCM with a fresh 12-byte IV per message, PBKDF2 or Argon2 for passwords with high cost; never roll your own crypto. Keep API keys out of client code.
+a11y|Accessibility|accessibility aria focus keyboard contrast reduced motion semantic screen reader|Use semantic elements (button, nav, main, label for inputs, dialog) before ARIA; the first rule of ARIA is not to use it when a native element exists. Everything must work by keyboard: visible :focus-visible styles, logical tab order, trap and restore focus in modals, Escape closes. Text contrast at least 4.5:1. Respect prefers-reduced-motion and prefers-color-scheme. Provide alt text, aria-live for async status, never rely on color alone, and make touch targets at least 44px.
+css|Modern CSS techniques|css container query has layer subgrid clamp custom property view transition scroll-driven color-mix nesting grid oklch|Container queries (container-type:inline-size; @container (min-width:400px)) beat media queries for components. :has() is a parent selector. Cascade layers (@layer reset, base, components) tame specificity. Native nesting, subgrid, aspect-ratio, gap and logical properties (margin-inline) are widely available. Fluid type with clamp(1rem,2.5vw,2rem). @property registers typed custom properties so gradients can animate. View Transitions: document.startViewTransition(()=>update()). Scroll-driven animations use animation-timeline:scroll() or view(). color-mix(in oklch,...) and oklch() give perceptual palettes. Animate transform and opacity (compositor only); use will-change sparingly.
+webperf|Web performance and layout|core web vitals lcp cls inp lazy virtualization reflow content-visibility preload layout thrash|Targets: LCP under 2.5s, INP under 200ms, CLS under 0.1. Avoid layout thrashing: batch DOM reads then writes (or use requestAnimationFrame) and never read offsetHeight between writes. Virtualize long lists (render only visible rows) and use content-visibility:auto. Lazy-load images (loading=lazy, decoding=async), preconnect/preload critical resources, defer scripts, split code with dynamic import(). Use passive listeners for scroll/touch. Measure with PerformanceObserver (largest-contentful-paint, layout-shift, longtask).
+dom|DOM APIs and Web Components|dom custom elements shadow observer intersectionobserver resizeobserver mutationobserver dialog popover template delegation|Event delegation: one listener on a parent using e.target.closest(selector). Custom elements: class extends HTMLElement with connectedCallback, disconnectedCallback, attributeChangedCallback and observedAttributes; Shadow DOM isolates styles (adoptedStyleSheets with CSSStyleSheet). IntersectionObserver for lazy loading and infinite scroll, ResizeObserver for element sizing, MutationObserver for DOM changes. The native dialog element (showModal) and the popover attribute replace most modal libraries. Use a template element plus cloneNode for fast repeated markup and a DocumentFragment to batch inserts.
+state|State management patterns|state redux reducer signals store xstate finite state machine immutable pubsub|Keep one source of truth and update immutably: state=reducer(state,action) then re-render (or use fine-grained signals: a value with subscribers and effects that re-run on dependency reads). Model modes as finite state machines (explicit states and events, impossible states unrepresentable); XState suits complex flows. Compute derived data with memoized selectors instead of storing it. Normalize collections by id. Use pub/sub or EventTarget for decoupled modules. structuredClone for deep copies; Immer for ergonomic immutable updates.
+patterns|Design patterns that matter in JS|pattern observer command undo redo strategy factory di adapter module singleton builder memento|Observer/EventTarget for events; Command objects with do/undo for undo-redo stacks; Strategy (swap functions) instead of switch ladders; factory functions over classes for composition; dependency injection by passing collaborators as parameters (makes testing easy); Adapter to normalize third-party APIs; module pattern or ES modules to avoid globals; Builder for complex configs; Memento for snapshots. Prefer composition over inheritance and small pure functions.
+singlefile|Architecting a large single-file app|single file html architecture modules importmap blob structure organization error overlay|Organize one big file into labeled sections: config/constants, state, pure logic (no DOM), rendering, event wiring, init. Use ES modules even inline (script type=module) with an importmap (script type=importmap) mapping bare names to esm.sh URLs. Keep data (levels, tables) as plain objects near the top. Namespace globals under one object. Extract pure functions so they can be tested with RUN js. Persist settings in localStorage inside try/catch with a version key. Add an error overlay: window.onerror and unhandledrejection should surface messages in the UI so bugs are visible.
+testing|Testing and verification|test assert property based snapshot deterministic harness tdd regression|Write a 15-line harness inside a RUN js block: const t=(n,f)=>{try{f();console.log('ok',n)}catch(e){console.error('FAIL',n,e.message)}} plus a throwing eq(). Make code testable: separate pure logic from the DOM and inject time and randomness (seeded PRNG). Test boundaries (empty, one, max, negative, NaN, unicode), idempotency, round trips (parse then serialize) and invariants with seeded random property loops (1000 cases). For UI use RUN html and check the DOM summary and console errors. Reproduce a bug as a failing test first, then fix it.
+debugging|Debugging methodology|debug bug bisect stack trace minimal repro console assert leak race|Reproduce first, shrink to a minimal case, then bisect (disable halves of the code). Read the first error in a stack trace, not the cascade after it. Form a hypothesis, log inputs and outputs at boundaries or use console.assert, confirm, then fix the root cause rather than the symptom. Typical culprits: off-by-one, stale closures, async race conditions, shared mutable state, undefined from missing keys, wrong this binding, floating point equality (compare with an epsilon), timezone and Date parsing, listeners attached twice. After the fix re-run the repro and neighbouring tests.
+parsing|Parsing, tokenizers, regex|parser tokenizer regex recursive descent pratt peg ast lexer backtracking interpreter|For expression languages: tokenize (regex with the sticky flag y), then recursive descent; use Pratt parsing (binding powers) for operator precedence; build an AST and interpret it or compile it to closures. Beware catastrophic regex backtracking (nested quantifiers like (a+)+); prefer specific classes and anchors, and the u or v flag for Unicode. Named groups and matchAll help extraction. Never parse HTML or JSON with regex: use DOMParser and JSON.parse (with a reviver for dates). Report errors with line and column.
+ml|In-browser machine learning|ml ai tensorflow onnx transformers webllm model inference webgpu quantization mediapipe|Options: TensorFlow.js (WebGL/WebGPU/WASM backends), onnxruntime-web (WASM and WebGPU; best for exported models), Transformers.js (Hugging Face pipelines on ONNX: sentiment, embeddings, speech, depth), WebLLM (LLMs on WebGPU), MediaPipe Tasks (hands, face, pose, segmentation). Prefer small quantized models (int8/q4), cache model files in IndexedDB or the Cache API, run inference in a worker, show download progress, and feature-detect WebGPU with a WASM fallback. Pre and post processing (resize, normalize, NMS) cause most bugs.
+network|Networking patterns|network websocket sse webrtc fetch cors retry reconnect polling|fetch: check response.ok, bound it with AbortSignal.timeout(ms) and read error bodies. WebSocket: reconnect with backoff and jitter, heartbeat pings, a resend queue and onclose code handling. Server-Sent Events (EventSource) give one-way streams with auto-reconnect. WebRTC data channels give peer-to-peer (needs signaling and STUN/TURN; PeerJS simplifies it). CORS: the server must send Access-Control-Allow-Origin; no-cors gives an opaque response; custom headers or methods trigger a preflight. BroadcastChannel and storage events sync tabs; SharedWorker shares one connection.
+audio|Web Audio and media|audio webaudio audioworklet synth mediarecorder decodeaudiodata latency scheduling|Create one AudioContext after a user gesture (autoplay policy). Graph: source to gain/filter/panner/analyser/compressor to destination. Schedule precisely with context.currentTime and a lookahead scheduler (setInterval 25ms scheduling 100ms ahead) rather than setTimeout. AudioWorklet runs DSP on a separate thread (process(inputs,outputs)). Use decodeAudioData for samples and AnalyserNode.getByteFrequencyData for visualizers. MediaRecorder with getUserMedia records; OfflineAudioContext renders faster than real time. Avoid clicks by changing params with setTargetAtTime or linear ramps.
+video|Video, WebCodecs and capture|video webcodecs mediasource mediastream capturestream pip hls encode decode frame|HTMLVideoElement offers requestVideoFrameCallback for frame-accurate work. WebCodecs (VideoDecoder, VideoEncoder, ImageDecoder) gives low-level frame access; combine with workers and OffscreenCanvas. Media Source Extensions power adaptive streaming (hls.js wraps them). canvas.captureStream(fps) plus MediaRecorder exports canvas animations to webm. getDisplayMedia captures the screen, getUserMedia the camera. Picture-in-Picture via video.requestPictureInPicture(). Always revoke object URLs and call track.stop() to release devices.
+modernjs|Modern JavaScript features|es2023 modern js optional chaining nullish structuredclone tosorted groupby set methods iterator helpers private fields intl|Use ?. and ?? (not || when 0 or empty string is valid), structuredClone, Array at/findLast/toSorted/toSpliced/with (non-mutating), Object.groupBy and Map.groupBy, Object.hasOwn, Set methods (union, intersection), iterator helpers where supported, private #fields and static blocks, top-level await in modules, Promise.withResolvers, AbortSignal.any/timeout, WeakRef, and Intl (DateTimeFormat, NumberFormat, RelativeTimeFormat, Segmenter, PluralRules). Temporal is not universally shipped yet; use Luxon or Day.js. Check browser support before relying on the newest features.
+jsdoc|Type safety without a build step|typescript jsdoc types ts-check typing validation zod discriminated union|Add // @ts-check at the top and JSDoc annotations (@param {number} x, @returns, @typedef) to get editor type checking without compiling. Validate untrusted data at boundaries with Zod-like schemas or hand-written guards, and keep internal data trusted. Use discriminated unions ({type:'move',...}) with an exhaustive switch whose default throws. Freeze constants with Object.freeze and model enums as frozen objects.
+binary|Binary data and file formats|binary dataview arraybuffer endianness bytes magic number zip png wav parse struct bitwise crc|Parse with DataView (getUint32(offset,littleEndian)) and mind endianness (PNG big-endian, WAV and x86 little-endian). Check magic numbers (PNG 89 50 4E 47, ZIP 50 4B 03 04, GIF 47 49 46, PDF 25 50 44 46). Decode with TextDecoder (utf-8 or latin1), encode with TextEncoder. Uint8Array.subarray shares memory, slice copies. Bit tricks: x&(x-1) clears the lowest set bit, >>>0 gives unsigned 32-bit, Math.clz32 counts leading zeros. Handle varints, alignment padding and CRC32/Adler32 checksums. WAV is a 44-byte header plus PCM; wrap bytes in a Blob and play via URL.createObjectURL.
+routing|Routing and history|router history pushstate hash deep link spa navigation url params|Hash routing (location.hash plus hashchange) works on file:// and static hosts; the History API (pushState/popstate) needs server rewrites. Keep state in the URL (URLSearchParams) so views are shareable and Back works; parse with new URL(location.href). Render on every route change from a table of pattern to handler, scroll to top and move focus to the new heading for accessibility. Use the Navigation API where available.
+pyodide|Python in the browser (Pyodide)|python pyodide micropip numpy pandas wasm interop|Inside RUN python, stdlib modules and packages you import (numpy, pandas, scipy, matplotlib, scikit-learn, pillow) auto-load and project files are in the working directory. Use micropip.install('pkg') for pure-Python wheels (await it). In a page: const py=await loadPyodide(); await py.loadPackage('numpy'); py.runPythonAsync(code). Interop: from js import document, fetch; py.globals.get('f') returns a callable; convert with .toJs() and to_py(); typed arrays pass without copying. Heavy work blocks the thread, so run Pyodide in a worker. No raw sockets or threads; network access is limited by CORS.
+i18n|Internationalization|intl i18n locale format date number plural segmenter rtl collator|Use Intl instead of hand formatting: new Intl.NumberFormat(locale,{style:'currency',currency}), DateTimeFormat with timeZone, RelativeTimeFormat, PluralRules for plurals, ListFormat, Collator for sorting (localeCompare with numeric:true) and Segmenter for grapheme and word splitting (emoji, CJK). Store UTC timestamps and format at the edge. Use logical CSS properties and dir=rtl for right-to-left, and message templates with placeholders instead of concatenating sentences.`;
+const KB=KBDATA.trim().split('\n').map(l=>{const[id,t,k,...c]=l.split('|');return{id,t,k:k.toLowerCase(),c:c.join('|')}});
+const KBINDEX=KB.map(e=>`${e.id} (${e.t})`).join('; ');
+function kbLookup(q){const terms=q.toLowerCase().split(/[\s,]+/).filter(w=>w.length>1);
+ const sc=KB.map(e=>({e,s:terms.reduce((a,w)=>a+(e.id===w?10:0)+(e.k.includes(w)?4:0)+(e.t.toLowerCase().includes(w)?3:0)+(e.c.toLowerCase().includes(w)?1:0),0)})).filter(x=>x.s>0).sort((a,b)=>b.s-a.s).slice(0,3);
+ return sc.length?sc.map(x=>`## ${x.e.t}\n${x.e.c}`).join('\n\n'):'No KB entry matched. Available topics: '+KBINDEX}
+const U=p=>/^https?:/.test(p)?p:'https://cdn.jsdelivr.net/'+p;
+const tags=l=>[...l.css.map(u=>`<link rel="stylesheet" href="${U(u)}">`),...l.js.map(u=>u.startsWith('esm:')?`<script type="module">import * as ${l.n.replace(/\W/g,'_')} from "${u.slice(4)}"; /* ES module: adapt the import to the exports you need */<\/script>`:`<script src="${U(u)}"><\/script>`)].join('\n');
+async function libLookup(q){const terms=q.split(/[,\n]+/).map(s=>s.trim()).filter(Boolean).slice(0,6),out=[];
+ for(const t of terms){const k=t.toLowerCase(),nk=k.replace(/\W/g,'');
+  let hit=LIBS.filter(l=>l.n.replace(/\W/g,'')===nk);
+  if(!hit.length)hit=LIBS.filter(l=>(l.n+' '+l.c+' '+l.d).toLowerCase().includes(k)).slice(0,5);
+  if(hit.length){hit.forEach(l=>out.push(`## ${l.n} ${l.v} [${l.c}] — ${l.d}\n${tags(l)}`));continue}
+  try{const j=await(await fetch('https://registry.npmjs.org/-/v1/search?size=4&text='+encodeURIComponent(t))).json();
+   for(const o of j.objects.slice(0,3)){const p=o.package;let ent='';
+    try{const pj=await(await fetch(`https://cdn.jsdelivr.net/npm/${p.name}@${p.version}/package.json`)).json();ent=pj.jsdelivr||pj.unpkg||(typeof pj.browser==='string'&&pj.browser)||pj.module||pj.main||''}catch(e){}
+    out.push(`## ${p.name} ${p.version} (npm, live lookup) — ${p.description||''}\n`+(ent?`<script src="https://cdn.jsdelivr.net/npm/${p.name}@${p.version}/${ent.replace(/^\.\//,'')}"><\/script>  (verify it is a browser/UMD build; for ES-module-only packages use https://esm.sh/${p.name}@${p.version})`:`No browser entry found; try https://esm.sh/${p.name}@${p.version}`))}
+   if(!j.objects.length)out.push(`## ${t}: nothing found`)}
+  catch(e){out.push(`## ${t}: live lookup failed (${e.message})`)}}
+ return out.join('\n\n')||'No results.'}
+async function fetchDoc(u){if(!/^https:\/\//.test(u))return'ERROR: https URLs only';
+ try{const r=await fetch(u,{signal:S.abort&&S.abort.signal}),t=await r.text();return(r.ok?'':'HTTP '+r.status+'\n')+(t.length>7000?t.slice(0,7000)+'\n…[truncated]':t)}catch(e){return'ERROR: '+e.message+' (the site may block cross-origin requests)'}}
+async function tools(text){const libs=[...text.matchAll(/<<<LIB:\s*([^>]+?)\s*>>>/g)].map(m=>m[1]),fx=[...text.matchAll(/<<<FETCH:\s*(\S+?)\s*>>>/g)].map(m=>m[1]),kb=[...text.matchAll(/<<<KB:\s*([^>]+?)\s*>>>/g)].map(m=>m[1]);let o='';
+ for(const q of kb.slice(0,3))o+=`KB "${q}":\n${kbLookup(q)}\n\n`;
+ for(const q of libs.slice(0,3))o+=`LIB "${q}":\n${await libLookup(q)}\n\n`;
+ for(const u of fx.slice(0,2))o+=`FETCH ${u}:\n${await fetchDoc(u)}\n\n`;
+ if(o)log('sys','📚 Library / knowledge / fetch tools',o.length>3000?o.slice(0,3000)+'…':o);return o}
+async function askT(role,msgs){let m=msgs;for(let i=0;;i++){const r=await ask(role,m);const o=i<2?await tools(r):'';if(!o)return r;m=[...m,{role:'assistant',content:r},{role:'user',content:'TOOL RESULTS:\n'+o+'\nNow give your full answer.'}]}}
+$('#libdb').onclick=()=>log('sys',`📚 Library DB (${LIBS.length} libraries) + Knowledge Base (${KB.length} topics) + live npm/jsDelivr lookup`,LIBS.map(l=>`${l.n} ${l.v} [${l.c}] ${l.d}`).join('\n')+'\n\nKNOWLEDGE BASE TOPICS:\n'+KB.map(e=>e.id+' — '+e.t).join('\n'));
+// ---------- bug tracker
+S.bugs=[];let bugN=0;const ERRRE=/ERROR:|\[error\]|Uncaught|Unhandled rejection|TIMEOUT|Traceback/;
+function renderBugs(){const open=S.bugs.filter(b=>b.st==='open').length;$('#bc').textContent=`(${open} open / ${S.bugs.length})`;$('#bugs').innerHTML='';
+ S.bugs.forEach(b=>{const d=document.createElement('div');d.className='bug '+b.st;d.title=b.text;d.textContent=`#${b.id} [${b.st}] ${b.src}: ${b.text.replace(/\s+/g,' ').slice(0,70)}`;
+  const x=document.createElement('span');x.textContent=' ✕';x.onclick=()=>{S.bugs=S.bugs.filter(y=>y!==b);renderBugs()};d.append(x);$('#bugs').append(d)})}
+function addBug(text,src){text=text.trim();if(!text||S.bugs.some(b=>b.st==='open'&&b.text.slice(0,120)===text.slice(0,120)))return;
+ const b={id:++bugN,text,src,st:'open'};S.bugs.push(b);renderBugs();log('bad','🐞 Bug #'+b.id+' ('+src+')',text.slice(0,1500));return b}
+function autoBug(o,src){if(ERRRE.test(o)){const b=addBug(src+' failed:\n'+o.slice(0,2500),'auto');if(b)log('sys','System','Filed as bug #'+b.id+' — the coder will debug it in the next round.')}}
+$('#addbug').onclick=()=>{addBug($('#bugt').value,'user');$('#bugt').value=''};
+$('#clrbug').onclick=()=>{S.bugs=S.bugs.filter(b=>b.st==='open');renderBugs()};renderBugs();
+// ---------- the loop
+const MAXTOOL=3;
+const RUNNOTE='\n\nCODE EXECUTION: you can run code in a sandbox by putting blocks anywhere in your reply (max 3 per reply):\n<<<RUN: js>>>\ncode\n<<<END>>>  = plain JavaScript in a Web Worker (async/await ok, console.log captured; fs.list(), fs.readFile(p), fs.exists(p), fs.readBinary(p) expose the project files; WebAssembly is available; no DOM; importScripts("<cdn url>") works for DOM-free UMD libraries).\n<<<RUN: python>>>\ncode\n<<<END>>>  = real Python compiled to WebAssembly (Pyodide; stdlib plus numpy/pandas/etc auto-load; project files are in the working directory).\n<<<RUN: html index.html>>>\n<<<END>>>  = loads that page (local scripts/css inlined, CDN scripts load normally) in a hidden sandboxed browser frame for ~3s and reports console output, uncaught errors, and a DOM summary.\nWith an empty body, "<<<RUN: js path/file.js>>>" or "<<<RUN: python path/file.py>>>" runs a project file. Runs execute against the current project files including edits made in this reply.';
+const LIBNOTE='\n\nLIBRARY DATABASE (vetted, pinned CDN libraries you may use; prefer these over hand-rolling):\n'+LIBINDEX+'\nTo get exact <script>/<link> tags and notes, put <<<LIB: name1, name2>>> in your reply (names, or a search word; anything not in the index is looked up live on npm/jsDelivr). To read docs or a README put <<<FETCH: https://...>>> (https GET only, e.g. https://cdn.jsdelivr.net/npm/<pkg>@<ver>/README.md). Always pin versions. For browser ES modules use https://esm.sh/<pkg>@<ver>. Tool results come back before you must finish your answer.\n\nKNOWLEDGE BASE (advanced coding notes, patterns, gotchas and snippets; put <<<KB: topic or keywords>>> in your reply to read entries, up to 3 per request): '+KBINDEX;
+const FMT='Reply with brief notes, then output every changed or new file IN FULL using exactly this format:\n<<<FILE: path/to/file>>>\n(full file content)\n<<<END>>>\nTo remove a file: <<<DELETE: path>>>. Never abbreviate files with "..." or placeholders. Only touch files you need to. No markdown fences around file content. Test your work with RUN blocks when feasible; you will receive the output and can fix files in your next reply. When satisfied, reply without any RUN blocks.';
+const SYS={
+designer:'You are the IDEA DESIGNER in a 3-AI team (designer, coder, approver) improving a codebase in a virtual file system. Study the goal, the files, and any approver feedback. Output a concise, concrete, prioritized plan for the NEXT improvement step only (what to change, in which files, which libraries from the database to use, and how the coder should verify it by running code). Be specific enough for a coder to implement without guessing. Do not write full code. If the approver rejected the last attempt, address their feedback directly.'+LIBNOTE,
+coder:'You are the CODER in a 3-AI team. Implement the designer\'s ideas in the virtual codebase. '+FMT+RUNNOTE+LIBNOTE,
+debug:'You are the CODER acting as the team\'s DEBUGGER. You receive bug reports (user-reported, failed test runs, or approver findings). For each bug: (1) reproduce it with a RUN block when possible (or reason from the stack trace), (2) find the root cause in the files, (3) fix it with the smallest correct change and no unrelated refactoring, (4) re-run to verify. '+FMT+' Finish with one line per bug: "#<id> fixed — cause — fix" or "#<id> unfixed — why".'+RUNNOTE+LIBNOTE,
+approver:'You are the APPROVER in a 3-AI team. Review the coder\'s changes (new vs old) against the user goal and the designer\'s plan (or, in a DEBUG round, against the bug reports: confirm each bug is truly fixed and nothing regressed). Check for bugs, missing pieces, truncated code or placeholders, and real improvement. When feasible, verify by executing the code with RUN blocks (you will get the output, then give your verdict). Your final reply must contain a short review whose LAST line is exactly either "VERDICT: APPROVE" or "VERDICT: REJECT". If rejecting, give clear actionable reasons first. Do not include RUN, LIB or KB blocks in the final verdict reply.'+RUNNOTE+LIBNOTE};
+async function runAll(runs,fs,tag){const out=[];for(const r of runs.slice(0,3)){if(!S.running)break;status(`${tag}: running ${r.lang} ${r.arg}`);const o=await execRun(r,fs);log('sys','▶ Run '+r.lang+' '+r.arg,o);out.push(`RUN ${r.lang} ${r.arg}:\n${o}`)}return out.join('\n\n')}
+async function run(){let goal=$('#prompt').value.trim();
+ if(!goal&&!S.bugs.some(b=>b.st==='open')){alert('Write a prompt (or report a bug) first.');return}if(!goal)goal='Find and fix the reported bugs in this project.';
+ if(!S.vfs.size&&!confirm('No files loaded. Start with an empty codebase?'))return;
+ S.running=true;S.abort=new AbortController();S.hist=[];S.round=0;S.prov={};S.cool={};$('#go').disabled=true;$('#stop').disabled=false;
+ log('sys','System',`Session started. Approver: ${$('#m_approver').value}\nDesigner: ${$('#m_designer').value}\nCoder: ${$('#m_coder').value}\nFallback: ${$('#fb').checked?'on':'off'} · Library DB: ${LIBS.length} libs · Open bugs: ${S.bugs.filter(b=>b.st==='open').length}`);
+ let feedback='',lastIdeas='';
+ try{while(S.running){
+  const open=S.bugs.filter(b=>b.st==='open'),dbg=open.length>0;
+  if(!dbg&&$('#dbgonly').checked){log('ok','System','Debug-only mode: no open bugs remain. Stopping.');break}
+  S.round++;const hs=S.hist.slice(-6).map(h=>'- '+h).join('\n')||'(none yet)',tagR=`Round ${S.round}${dbg?' · DEBUG':''}`;
+  let ideas;
+  if(dbg){ideas=open.map(b=>`BUG #${b.id} (${b.src}):\n${b.text}`).join('\n\n');log('bad',`${tagR} — ${open.length} open bug(s) sent to the coder`,ideas.slice(0,3000))}
+  else{status(`round ${S.round}: designer thinking`);
+   ideas=(await askT('designer',[{role:'system',content:SYS.designer},{role:'user',content:`USER GOAL:\n${goal}\n\nAPPROVED CHANGES SO FAR:\n${hs}\n\n${feedback?'APPROVER REJECTED LAST ATTEMPT:\n'+feedback+'\n\nPREVIOUS PLAN:\n'+lastIdeas+'\n\n':''}CURRENT CODEBASE:\n${snapshot(S.vfs)}`}])).replace(/<<<(LIB|FETCH|KB):[^>]*>>>/g,'');
+   lastIdeas=ideas;log('designer',`${tagR} · Designer (${who('designer')})`,ideas)}
+  if(!S.running)break;
+  const staged=new Map(S.vfs),touched=new Set();let lastCode='';
+  let cm=[{role:'system',content:dbg?SYS.debug:SYS.coder},{role:'user',content:`USER GOAL:\n${goal}\n\n${dbg?'BUG REPORTS TO FIX:\n':"DESIGNER'S PLAN:\n"}${ideas}\n\n${feedback?'APPROVER FEEDBACK TO ADDRESS:\n'+feedback+'\n\n':''}CURRENT CODEBASE:\n${snapshot(S.vfs)}`}];
+  for(let turn=0;turn<=MAXTOOL&&S.running;turn++){status(`round ${S.round}: coder ${dbg?'debugging':turn?'fixing after test run':'coding'}`);
+   const code=await ask('coder',cm);lastCode=code;log('coder',`${tagR} · Coder (${who('coder')})${turn?' · iteration '+turn:''}`,code.length>6000?code.slice(0,6000)+'\n…[log truncated]':code);
+   const{ed,del}=parseEdits(code);ed.forEach(e=>{staged.set(e.path,e.content);touched.add(e.path)});del.forEach(p=>{staged.delete(p);touched.add(p)});
+   const runs=parseRuns(code),tl=await tools(code);if((!runs.length&&!tl)||turn===MAXTOOL)break;
+   const res=(tl?tl:'')+await runAll(runs,staged,`round ${S.round}`);
+   cm=[...cm,{role:'assistant',content:code},{role:'user',content:'TOOL AND EXECUTION RESULTS:\n'+res+'\n\nFix any problems by outputting corrected files in full, or reply without RUN/LIB blocks if everything works.'}]}
+  if(!S.running)break;
+  if(!touched.size){feedback='Your reply contained no valid <<<FILE: ...>>> blocks. Use the exact format.';log('bad','System','Coder produced no parsable file edits; retrying.');continue}
+  const diff=[...touched].map(p=>`=== ${p} ===\nOLD:\n${(S.vfs.get(p)??'(did not exist)').slice(0,8000)}\nNEW:\n${(staged.get(p)??'(deleted)').slice(0,16000)}`).join('\n\n');
+  let am=[{role:'system',content:SYS.approver},{role:'user',content:`USER GOAL:\n${goal}\n\n${dbg?'THIS IS A DEBUG ROUND. Bug reports:\n':"DESIGNER'S PLAN:\n"}${ideas}\n\nCODER'S FINAL NOTES:\n${lastCode.replace(/<<<FILE:[\s\S]*?<<<END>>>/g,'[file omitted]').slice(0,2500)}\n\nCHANGES:\n${diff}`}],rev='',runErr='';
+  for(let turn=0;turn<=MAXTOOL&&S.running;turn++){status(`round ${S.round}: approver reviewing`);rev=await ask('approver',am);
+   const runs=parseRuns(rev),tl=await tools(rev);if((!runs.length&&!tl)||turn===MAXTOOL)break;
+   log('approver',`${tagR} · Approver testing (${who('approver')})`,rev);
+   const rr=await runAll(runs,staged,`round ${S.round}`);if(ERRRE.test(rr))runErr=rr;
+   am=[...am,{role:'assistant',content:rev},{role:'user',content:'TOOL AND EXECUTION RESULTS:\n'+tl+rr+'\n\nNow give your final review, ending with the VERDICT line, and no RUN/LIB blocks.'}]}
+  if(!S.running)break;
+  const tail=rev.split('\n').slice(-3).join('\n'),ok=/VERDICT:\s*APPROVE/i.test(tail)&&!/VERDICT:\s*REJECT/i.test(tail);
+  log(ok?'ok':'bad',`${tagR} · Approver ${ok?'APPROVED ✔':'REJECTED ✘'} (${who('approver')})`,rev);
+  if(ok){S.vfs=staged;feedback='';
+   if(dbg){const un=new Set([...lastCode.matchAll(/#(\d+)[^\n]*unfixed/gi)].map(m=>+m[1])),fixed=[];open.forEach(b=>{if(!un.has(b.id)){b.st='fixed';fixed.push('#'+b.id)}});renderBugs();
+    S.hist.push(`Round ${S.round}: DEBUG fixed ${fixed.join(', ')||'nothing'} in ${[...touched].join(', ')}`);log('ok','System','Bugs fixed: '+(fixed.join(', ')||'none')+(un.size?' · still open: '+[...un].map(i=>'#'+i).join(', '):''))}
+   else S.hist.push(`Round ${S.round}: ${[...touched].join(', ')} — ${ideas.slice(0,160).replace(/\s+/g,' ')}`);render()}
+  else{feedback=rev;if(runErr)addBug('Approver test run failed:\n'+runErr.slice(0,2500),'approver')}
+  await sleep(1500)}}
+ catch(e){if(e.name!=='AbortError'&&e.message!=='stopped')log('bad','Error',e.message)}
+ S.running=false;$('#go').disabled=false;$('#stop').disabled=true;status('stopped after '+S.round+' round(s)');log('sys','System','Session stopped. Use Download codebase to save the result.')}
+$('#help').onclick=()=>$('#hm').classList.add('on');$('#hx').onclick=()=>$('#hm').classList.remove('on');$('#hm').onclick=e=>{if(e.target.id==='hm')$('#hm').classList.remove('on')};$('#go').onclick=run;$('#stop').onclick=()=>{S.running=false;S.abort&&S.abort.abort();status('stopping…')};
+</script></body></html>
